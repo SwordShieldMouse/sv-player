@@ -11,14 +11,14 @@ def train(env, policy, value_fn, policy_optim, value_fn_optim, episodes):
             env.render()
 
             logits = policy(obs)
-            m = categorical(logits)
+            m = torch.distributions.Categorical(logits)
             action = m.sample()
             obs, reward, done, info = env.step(action.item())
 
             loss = -reward * m.log_prob(action)
             policy_optim.zero_grad()
             loss.backward()
-            policy.step()
+            policy_optim.step()
 
             obs = torch.FloatTensor(obs)
 
