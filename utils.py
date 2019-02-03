@@ -15,7 +15,7 @@ def train(env, policy, value_fn, policy_optim, value_fn_optim, episodes, gamma):
             m = torch.distributions.Categorical(logits)
             action = m.sample()
             obs, reward, done, info = env.step(action.item())
-            obs = torch.FloatTensor(obs)
+            obs = torch.FloatTensor(obs).to(device)
 
             # maintain memory of states
             # TODO: make sure to delete memory when we go on for too long
