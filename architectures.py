@@ -89,7 +89,7 @@ class Relational_NN(nn.Module):
         # try something more efficient with matrix multiplication
         # each row of x should interact with all the other rows
         # first project to a subspace
-        ys = torch.zeros([self.attn_heads, n_rows, 32])
+        ys = torch.zeros([self.attn_heads, n_rows, 32], requires_grad = True).to(device)
         #print(ys.shape)
         for ix, g in enumerate(self.gs):
             ys[ix] = g(x)
