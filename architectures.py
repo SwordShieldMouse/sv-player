@@ -15,13 +15,14 @@ def get_padding(kernel):
 class State_Rep(nn.Module):
     # TODO: how do we keep track of motion? do we need a replay buffer? an rnn?
         # important for: dodging projectiles, assessing movement of enemies for aiming
-    def __init__(self, c, h, w, attn_heads = 3):
+    def __init__(self, c, h, w, attn_heads = 3, gru_layers = 2):
         super(State_Rep, self).__init__()
         self.c = c
         self.h = h
         self.w = w
         self.attn_heads = 3
         self.final_channel_size = 5
+        self.gru_layers = gru_layers
 
         # try other conv architectures in future, like densenet
         self.conv_layers = nn.Sequential(
@@ -41,7 +42,10 @@ class State_Rep(nn.Module):
 
         self.relational_nn = Relational_NN(self.final_channel_size, attn_heads)
 
-        self.conv_grus = nn.ModuleList([Conv_GRU(c, h, w), Conv_GRU(c, h, w)])
+        self.conv_grus = nn.ModuleList()
+        for _ in range(gru_layers):
+            self.conv_grus.append(Conv_GRU(c, h, w))
+
         self.hs = torch.rand([2, c, h, w], requires_grad = True).to(device)
 
     def forward(self, x):
@@ -56,7 +60,7 @@ class State_Rep(nn.Module):
         relations = self.relational_nn(x)
 
         # run the GRU
-        for ix in range(2):
+        for ix in range(self.gru_layers):
             conv_gru_out, self.hs[ix] = self.conv_grus[ix](x, self.hs[ix])
 
         conv_gru_out = conv_gru_out.view(1, -1)
@@ -67,7 +71,7 @@ class State_Rep(nn.Module):
         return self.final_channel_size, self.final_h, self.final_w
 
     def get_out_len(self):
-        return self.final_channel_size * self.final_h * self.final_w + self.attn_heads * self.final_channel_size + self.c * self.h * self.w
+        return self.final_channel_size * self.final_h * self.final_w + self.attn_heads * self.final_channel_size + self.c * self.h * self.w * self.gru_layers
 
 class Conv_GRU(nn.Module):
     # a convolutional GRU that takes an image, performs convolutions, then passes it through a GRU
@@ -79,7 +83,7 @@ class Conv_GRU(nn.Module):
         self.z_convs = nn.ModuleList()
         self.n_convs = nn.ModuleList()
 
-        for _ in range(1):
+        for _ in range(2):
             self.r_convs.append(nn.Conv2d(c, 5, kernel_size = 3, padding = get_padding(3)))
             self.z_convs.append(nn.Conv2d(c, 5, kernel_size = 3, padding = get_padding(3)))
             self.n_convs.append(nn.Conv2d(c, 5, kernel_size = 3, padding = get_padding(3)))
