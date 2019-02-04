@@ -34,19 +34,23 @@ class State_Rep(nn.Module):
             nn.MaxPool2d(2)
         )
 
+        # get the final image shape after the conv layers
         self.final_h = h
         self.final_w = w
         for _ in range(2):
             self.final_h, self.final_w = get_conv_dim(self.final_h, self.final_w, kernel = 3, padding = 0)
             self.final_h, self.final_w = get_pool_dim(self.final_h, self.final_w, kernel = 2)
 
+        # relational nn
         self.relational_nn = Relational_NN(self.final_channel_size, attn_heads)
 
+        # conv_grus
         self.conv_grus = nn.ModuleList()
         for _ in range(gru_layers):
-            self.conv_grus.append(Conv_GRU(c, h, w))
+            self.conv_grus.append(Conv_GRU(self.final_channel_size))
 
-        self.hs = torch.rand([2, c, h, w], requires_grad = True).to(device)
+        # 1 for the batch size
+        self.hs = torch.rand([2, 1, self.final_channel_size, self.final_h, self.final_w], requires_grad = True).to(device)
 
     def forward(self, x):
         # give a batch size since nn.conv2d requires it
@@ -60,40 +64,50 @@ class State_Rep(nn.Module):
         relations = self.relational_nn(x)
 
         # run the GRU
+        conv_gru_out = conv_x.clone()
         for ix in range(self.gru_layers):
-            conv_gru_out, self.hs[ix] = self.conv_grus[ix](x, self.hs[ix])
+            conv_gru_out, self.hs[ix, :, :, :, :] = self.conv_grus[ix](conv_gru_out, self.hs[ix, :, :, :, :])
 
         conv_gru_out = conv_gru_out.view(1, -1)
 
-        return torch.cat([conv_x.view(1, -1), relations, conv_gru_out], dim = -1)
+
+        out = torch.cat([conv_x.view(1, -1), relations, conv_gru_out], dim = -1)
+        #print(out.shape)
+        return out
 
     def get_final_img_shape(self):
         return self.final_channel_size, self.final_h, self.final_w
 
     def get_out_len(self):
-        return self.final_channel_size * self.final_h * self.final_w + self.attn_heads * self.final_channel_size + self.c * self.h * self.w * self.gru_layers
+        conv_len = self.final_channel_size * self.final_h * self.final_w
+        attn_len = self.attn_heads * self.final_channel_size
+        gru_len = conv_len
+        return conv_len + attn_len + gru_len
 
 class Conv_GRU(nn.Module):
     # a convolutional GRU that takes an image, performs convolutions, then passes it through a GRU
-    def __init__(self, c, h, w):
+    def __init__(self, c):
         super(Conv_GRU, self).__init__()
-        self.c, self.h, self.w = c, h, w
+        self.c, self.h, self.w = c
 
         self.r_convs = nn.ModuleList()
         self.z_convs = nn.ModuleList()
         self.n_convs = nn.ModuleList()
 
         for _ in range(2):
-            self.r_convs.append(nn.Conv2d(c, 5, kernel_size = 3, padding = get_padding(3)))
-            self.z_convs.append(nn.Conv2d(c, 5, kernel_size = 3, padding = get_padding(3)))
-            self.n_convs.append(nn.Conv2d(c, 5, kernel_size = 3, padding = get_padding(3)))
+            self.r_convs.append(nn.Conv2d(c, c, kernel_size = 3, padding = get_padding(3)))
+            self.z_convs.append(nn.Conv2d(c, c, kernel_size = 3, padding = get_padding(3)))
+            self.n_convs.append(nn.Conv2d(c, c, kernel_size = 3, padding = get_padding(3)))
 
         #self.h = torch.rand([c, h, w], requires_grad = True).to(device)
 
     def forward(self, x, h):
+        #print(h.shape)
+        print(x.shape, h.shape)
         r = F.sigmoid(self.r_convs[0](x) + self.r_convs[1](h))
         z = F.sigmoid(self.z_convs[0](x) + self.z_convs[1](h))
         n = F.tanh(self.n_convs[0](x) + r * self.n_convs[1](h))
+        #print(z.shape, n.shape, h.shape)
         h = (1 - z) * n + z * h
 
         return h, h
