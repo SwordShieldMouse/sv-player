@@ -57,7 +57,7 @@ class State_Rep(nn.Module):
 
         # run the GRU
         for ix in range(2):
-            conv_gru_out, self.hs[ix] = conv_grus[ix](x, self.hs[ix])
+            conv_gru_out, self.hs[ix] = self.conv_grus[ix](x, self.hs[ix])
 
         conv_gru_out = conv_gru_out.view(1, -1)
 
