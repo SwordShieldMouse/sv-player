@@ -88,7 +88,7 @@ class Conv_GRU(nn.Module):
     # a convolutional GRU that takes an image, performs convolutions, then passes it through a GRU
     def __init__(self, c):
         super(Conv_GRU, self).__init__()
-        self.c, self.h, self.w = c
+        self.c = c
 
         self.r_convs = nn.ModuleList()
         self.z_convs = nn.ModuleList()
