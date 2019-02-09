@@ -15,7 +15,7 @@ def get_padding(kernel):
 class State_Rep(nn.Module):
     # TODO: how do we keep track of motion? do we need a replay buffer? an rnn?
         # important for: dodging projectiles, assessing movement of enemies for aiming
-    def __init__(self, c, h, w, attn_heads = 3, gru_layers = 2):
+    def __init__(self, c, h, w, attn_heads = 3, gru_layers = 1):
         super(State_Rep, self).__init__()
         self.c = c
         self.h = h
@@ -50,7 +50,8 @@ class State_Rep(nn.Module):
             self.conv_grus.append(Conv_GRU(self.final_channel_size))
 
         # 1 for the batch size
-        self.hs = torch.rand([2, 1, self.final_channel_size, self.final_h, self.final_w], requires_grad = True).to(device)
+        # for holding the hidden states of the grus
+        self.hs = [torch.rand([1, self.final_channel_size, self.final_h, self.final_w]).to(device)]
 
     def forward(self, x):
         # give a batch size since nn.conv2d requires it
@@ -58,20 +59,26 @@ class State_Rep(nn.Module):
         # Gym gives us inputs in the form (h, w, c), so convert to (c, h, w)
 
         x = x.permute(0, 3, 1, 2)
-        conv_x = self.conv_layers(x)
 
         # run the relational network
         relations = self.relational_nn(x)
 
         # run the GRU
-        conv_gru_out = conv_x.clone()
+        conv_gru_outs = [self.conv_layers(x)]#torch.empty([self.gru_layers + 1, 1, self.final_channel_size, self.final_h, self.final_w], requires_grad = True).to(device)
+        #print(conv_gru_outs[0, :, :, :].shape, self.conv_layers(x).shape)
+        #conv_gru_outs[0, :, :, :, :] = self.conv_layers(x)
         for ix in range(self.gru_layers):
-            conv_gru_out, self.hs[ix, :, :, :, :] = self.conv_grus[ix](conv_gru_out, self.hs[ix, :, :, :, :])
+            gru_out, gru_h = self.conv_grus[ix](conv_gru_outs[ix], self.hs[ix])
+            conv_gru_outs.append(gru_out)
+            self.hs.append(gru_h)
+            #conv_gru_outs[ix + 1, :, :, :, :], self.hs[ix + 1, :, :, :, :] = self.conv_grus[ix](conv_gru_outs[ix, :, :, :, :], self.hs[ix, :, :, :, :])
 
-        conv_gru_out = conv_gru_out.view(1, -1)
+        #conv_gru_outs.detach()
 
+        # the last output is what we'll feed into our other models
+        conv_gru_out = conv_gru_outs[-1].view(1, -1)
 
-        out = torch.cat([conv_x.view(1, -1), relations, conv_gru_out], dim = -1)
+        out = torch.cat([relations, conv_gru_out], dim = -1)
         #print(out.shape)
         return out
 
@@ -79,10 +86,11 @@ class State_Rep(nn.Module):
         return self.final_channel_size, self.final_h, self.final_w
 
     def get_out_len(self):
-        conv_len = self.final_channel_size * self.final_h * self.final_w
+        #conv_len = self.final_channel_size * self.final_h * self.final_w
         attn_len = self.attn_heads * self.final_channel_size
-        gru_len = conv_len
-        return conv_len + attn_len + gru_len
+        gru_len = self.final_channel_size * self.final_h * self.final_w
+        #return conv_len + attn_len + gru_len
+        return attn_len + gru_len
 
 class Conv_GRU(nn.Module):
     # a convolutional GRU that takes an image, performs convolutions, then passes it through a GRU
@@ -103,14 +111,14 @@ class Conv_GRU(nn.Module):
 
     def forward(self, x, h):
         #print(h.shape)
-        print(x.shape, h.shape)
-        r = F.sigmoid(self.r_convs[0](x) + self.r_convs[1](h))
-        z = F.sigmoid(self.z_convs[0](x) + self.z_convs[1](h))
-        n = F.tanh(self.n_convs[0](x) + r * self.n_convs[1](h))
+        #print(x.shape, h.shape)
+        r = torch.sigmoid(self.r_convs[0](x) + self.r_convs[1](h))
+        z = torch.sigmoid(self.z_convs[0](x) + self.z_convs[1](h))
+        n = torch.tanh(self.n_convs[0](x) + r * self.n_convs[1](h))
         #print(z.shape, n.shape, h.shape)
-        h = (1 - z) * n + z * h
+        out = (1 - z) * n + z * h
 
-        return h, h
+        return out, out
 
 
 
@@ -146,19 +154,18 @@ class Relational_NN(nn.Module):
         # try something more efficient with matrix multiplication
         # each row of x should interact with all the other rows
         # first project to a subspace
-        ys = torch.zeros([self.attn_heads, n_rows, 32], requires_grad = True).to(device)
+        ys = []#torch.empty[self.attn_heads, n_rows, 32], requires_grad = True).to(device)
         #print(ys.shape)
         for ix, g in enumerate(self.gs):
-            ys[ix] = g(x)
+            #ys[ix, :, :] = g(x)
+            ys.append(g(x))
         #y = self.g(x)
         # perform the interaction
-        #print(torch.sum(torch.bmm(ys, ys.permute(0, 2, 1)), dim = 1).shape)
-        ys = F.softmax(torch.sum(torch.bmm(ys, ys.permute(0, 2, 1)), dim = 1), dim = 1)
-        #y = F.softmax(torch.sum(y.mm(torch.t(y)), dim = 0), dim = 0)
-        # now we have a n_rows by n_rows matrix; problem is we only have one number for each interaction
+        stacked_ys = torch.stack(ys)
+        y = F.softmax(torch.sum(torch.bmm(stacked_ys, stacked_ys.permute(0, 2, 1)), dim = 1), dim = 1)
 
         # attention output would be just be vector of intensities, where length of the vector is number of objects
-        attn = torch.matmul(ys, x).view(1, -1)
+        attn = torch.matmul(y, x).view(1, -1)
         return attn
 
 
@@ -179,9 +186,8 @@ class Value_Fn(nn.Module):
         )
 
     def forward(self, x):
-        x = self.state_rep(x)
-        x = self.linears(x)
-        return x
+        out = self.linears(self.state_rep(x))
+        return out
 
 
 class Policy(nn.Module):
@@ -210,9 +216,8 @@ class Policy(nn.Module):
         )
 
     def forward(self, x):
-        x = self.state_rep(x)
-        x = self.linears(x)
-        return x
+        out = self.linears(self.state_rep(x))
+        return out
 
 # TODO: try a random search to compare
 # TODO: also try deterministic policy gradient
