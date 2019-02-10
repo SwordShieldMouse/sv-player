@@ -8,8 +8,11 @@ h, w, c = obs_dim
 episodes = 100
 gamma = 0.99
 
-policy = Policy(action_dim, c, h, w).to(device)
-value_fn = Value_Fn(c, h, w).to(device)
+# common state feature extractor for both policy and value function
+state_rep = State_Rep(c, h, w, attn_heads = 3, gru_layers = 1).to(device)
+
+policy = Policy(action_dim, state_rep).to(device)
+value_fn = Value_Fn(state_rep).to(device)
 
 policy_optim = optim.Adam(policy.parameters(), lr = 1e-3)
 value_fn_optim = optim.Adam(value_fn.parameters(), lr = 1e-3)

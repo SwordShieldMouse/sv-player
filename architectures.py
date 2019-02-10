@@ -64,16 +64,12 @@ class State_Rep(nn.Module):
         relations = self.relational_nn(x)
 
         # run the GRU
-        conv_gru_outs = [self.conv_layers(x)]#torch.empty([self.gru_layers + 1, 1, self.final_channel_size, self.final_h, self.final_w], requires_grad = True).to(device)
-        #print(conv_gru_outs[0, :, :, :].shape, self.conv_layers(x).shape)
-        #conv_gru_outs[0, :, :, :, :] = self.conv_layers(x)
+        conv_gru_outs = [self.conv_layers(x)]
         for ix in range(self.gru_layers):
             gru_out, gru_h = self.conv_grus[ix](conv_gru_outs[ix], self.hs[ix])
             conv_gru_outs.append(gru_out)
             self.hs.append(gru_h)
-            #conv_gru_outs[ix + 1, :, :, :, :], self.hs[ix + 1, :, :, :, :] = self.conv_grus[ix](conv_gru_outs[ix, :, :, :, :], self.hs[ix, :, :, :, :])
 
-        #conv_gru_outs.detach()
 
         # the last output is what we'll feed into our other models
         conv_gru_out = conv_gru_outs[-1].view(1, -1)
@@ -149,17 +145,10 @@ class Relational_NN(nn.Module):
         # There are thus h * w rows
         n_rows = x.shape[0]
 
-        # probably need multiheaded attention to deal with different kinds of relationships
-            # e.g., shields, enemies, projectiles
-        # try something more efficient with matrix multiplication
-        # each row of x should interact with all the other rows
-        # first project to a subspace
-        ys = []#torch.empty[self.attn_heads, n_rows, 32], requires_grad = True).to(device)
-        #print(ys.shape)
+
+        ys = []
         for ix, g in enumerate(self.gs):
-            #ys[ix, :, :] = g(x)
             ys.append(g(x))
-        #y = self.g(x)
         # perform the interaction
         stacked_ys = torch.stack(ys)
         y = F.softmax(torch.sum(torch.bmm(stacked_ys, stacked_ys.permute(0, 2, 1)), dim = 1), dim = 1)
@@ -172,10 +161,11 @@ class Relational_NN(nn.Module):
 class Value_Fn(nn.Module):
     # conv. network that reads the image input
     # TODO: should implement a notion of objects, perhaps with a relational neural network
-    def __init__(self, c, h, w, attn_heads = 3):
+    def __init__(self, state_rep):
         super(Value_Fn, self).__init__()
 
-        self.state_rep = State_Rep(c, h, w, attn_heads)
+        #self.state_rep = State_Rep(c, h, w, attn_heads)
+        self.state_rep = state_rep
 
         self.linears = nn.Sequential(
             nn.Linear(self.state_rep.get_out_len(), 128),
@@ -191,20 +181,15 @@ class Value_Fn(nn.Module):
 
 
 class Policy(nn.Module):
-    # should policy and value function share representation of the image?
-    # maybe yes since this reduces training time and things that are relevant for policy should also be relevant for value function?
     # TODO: agent seems stuck in one position after first episode
         # seems like it is adhering to unoptimal strategy of waiting for a column to shoot up
         # but does not discover strategy of hiding behind blocks
         # mb need to add some signal to explore if reward stays the same or does not increase?
             # intrinsic reward is self-improvement? how is this different from maximizing return?
-    def __init__(self, action_dim, c, h, w, attn_heads = 3):
+    def __init__(self, action_dim, state_rep):
         super(Policy, self).__init__()
-        self.h = h
-        self.w = w
-        self.c = c
-
-        self.state_rep = State_Rep(c, h, w, attn_heads)
+        #self.state_rep = State_Rep(c, h, w, attn_heads)
+        self.state_rep = state_rep
 
         self.linears = nn.Sequential(
             nn.Linear(self.state_rep.get_out_len(), 128),
@@ -220,4 +205,3 @@ class Policy(nn.Module):
         return out
 
 # TODO: try a random search to compare
-# TODO: also try deterministic policy gradient
