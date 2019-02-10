@@ -15,13 +15,13 @@ def get_padding(kernel):
 class State_Rep(nn.Module):
     # TODO: how do we keep track of motion? do we need a replay buffer? an rnn?
         # important for: dodging projectiles, assessing movement of enemies for aiming
-    def __init__(self, c, h, w, attn_heads = 3, gru_layers = 1):
+    def __init__(self, c, h, w, attn_heads = 3, gru_layers = 1, final_c = 5):
         super(State_Rep, self).__init__()
         self.c = c
         self.h = h
         self.w = w
-        self.attn_heads = 3
-        self.final_channel_size = 5
+        self.attn_heads = attn_heads
+        self.final_c = final_c
         self.gru_layers = gru_layers
 
         # try other conv architectures in future, like densenet
@@ -29,7 +29,7 @@ class State_Rep(nn.Module):
             nn.Conv2d(c, 5, kernel_size = 3, padding = 0),
             nn.LeakyReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(5, self.final_channel_size, kernel_size = 3, padding = 0),
+            nn.Conv2d(5, self.final_c, kernel_size = 3, padding = 0),
             nn.LeakyReLU(),
             nn.MaxPool2d(2)
         )
@@ -42,16 +42,12 @@ class State_Rep(nn.Module):
             self.final_h, self.final_w = get_pool_dim(self.final_h, self.final_w, kernel = 2)
 
         # relational nn
-        self.relational_nn = Relational_NN(self.final_channel_size, attn_heads)
+        self.relational_nn = Relational_NN(self.final_c, attn_heads)
 
         # conv_grus
         self.conv_grus = nn.ModuleList()
         for _ in range(gru_layers):
-            self.conv_grus.append(Conv_GRU(self.final_channel_size))
-
-        # 1 for the batch size
-        # for holding the hidden states of the grus
-        self.hs = [torch.rand([1, self.final_channel_size, self.final_h, self.final_w]).to(device)]
+            self.conv_grus.append(Conv_GRU(self.final_c))
 
     def forward(self, x):
         # give a batch size since nn.conv2d requires it
@@ -62,29 +58,35 @@ class State_Rep(nn.Module):
 
         # run the relational network
         relations = self.relational_nn(x)
+        assert relations.numel() == self.attn_heads * self.final_c, "size mismatch for relations network"
 
         # run the GRU
+        # TODO: Implement backpropagation through time
         conv_gru_outs = [self.conv_layers(x)]
+        # 1 for the batch size
+        # for holding the hidden states of the grus
+        hs = [torch.rand([1, self.final_c, self.final_h, self.final_w]).to(device)]
         for ix in range(self.gru_layers):
-            gru_out, gru_h = self.conv_grus[ix](conv_gru_outs[ix], self.hs[ix])
+            gru_out, gru_h = self.conv_grus[ix](conv_gru_outs[ix], hs[ix])
             conv_gru_outs.append(gru_out)
-            self.hs.append(gru_h)
+            hs.append(gru_h)
 
 
         # the last output is what we'll feed into our other models
         conv_gru_out = conv_gru_outs[-1].view(1, -1)
+        assert conv_gru_out.numel() == self.final_c * self.final_h * self.final_w, "size mismatch for gru"
 
         out = torch.cat([relations, conv_gru_out], dim = -1)
         #print(out.shape)
         return out
 
     def get_final_img_shape(self):
-        return self.final_channel_size, self.final_h, self.final_w
+        return self.final_c, self.final_h, self.final_w
 
     def get_out_len(self):
         #conv_len = self.final_channel_size * self.final_h * self.final_w
-        attn_len = self.attn_heads * self.final_channel_size
-        gru_len = self.final_channel_size * self.final_h * self.final_w
+        attn_len = self.attn_heads * self.final_c
+        gru_len = self.final_c * self.final_h * self.final_w
         #return conv_len + attn_len + gru_len
         return attn_len + gru_len
 
@@ -201,7 +203,8 @@ class Policy(nn.Module):
         )
 
     def forward(self, x):
-        out = self.linears(self.state_rep(x))
+        out = self.state_rep(x)
+        out = self.linears(out)
         return out
 
 # TODO: try a random search to compare

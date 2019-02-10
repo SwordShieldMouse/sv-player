@@ -19,14 +19,14 @@ def train(env, policy, value_fn, policy_optim, value_fn_optim, episodes, gamma):
 
             # maintain memory of states
             # TODO: make sure to delete memory when we go on for too long
-            state_history.append(obs)
+            state_history.append(obs.detach())
             reward_history.append(reward)
 
             # optimize the policy
             # use the advantage function as the reward
             policy_loss = -(reward + gamma * value_fn(state_history[-1]) - value_fn(state_history[-2])) * m.log_prob(action)
             policy_optim.zero_grad()
-            policy_loss.backward()
+            policy_loss.backward(retain_graph = True) # need to retain graph because policy and value_fn share state_rep
             policy_optim.step()
 
             # optimize the value function with a semi-gradient method
@@ -34,7 +34,6 @@ def train(env, policy, value_fn, policy_optim, value_fn_optim, episodes, gamma):
             value_loss = (reward + gamma * next_value - value_fn(state_history[-2])) ** 2
             value_fn_optim.zero_grad()
             value_loss.backward()
-            value_fn_optim.zero_grad()
 
             if done is True:
                 print("episode {} is done".format(episode))

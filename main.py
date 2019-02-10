@@ -9,7 +9,7 @@ episodes = 100
 gamma = 0.99
 
 # common state feature extractor for both policy and value function
-state_rep = State_Rep(c, h, w, attn_heads = 3, gru_layers = 1).to(device)
+state_rep = State_Rep(c, h, w, attn_heads = 2, gru_layers = 2).to(device)
 
 policy = Policy(action_dim, state_rep).to(device)
 value_fn = Value_Fn(state_rep).to(device)
