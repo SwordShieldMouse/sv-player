@@ -17,4 +17,4 @@ value_fn = Value_Fn(state_rep).to(device)
 policy_optim = optim.Adam(policy.parameters(), lr = 1e-3)
 value_fn_optim = optim.Adam(value_fn.parameters(), lr = 1e-3)
 
-train(env, policy, value_fn, policy_optim, value_fn_optim, episodes = episodes, gamma = gamma)
+train(env, state_rep, policy, value_fn, policy_optim, value_fn_optim, episodes = episodes, gamma = gamma, k1 = 15, k2 = 30)

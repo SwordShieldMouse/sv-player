@@ -49,7 +49,7 @@ class State_Rep(nn.Module):
         for _ in range(gru_layers):
             self.conv_grus.append(Conv_GRU(self.final_c))
 
-    def forward(self, x):
+    def forward(self, x, hidden):
         # give a batch size since nn.conv2d requires it
         x = torch.unsqueeze(x, 0)
         # Gym gives us inputs in the form (h, w, c), so convert to (c, h, w)
@@ -61,15 +61,14 @@ class State_Rep(nn.Module):
         assert relations.numel() == self.attn_heads * self.final_c, "size mismatch for relations network"
 
         # run the GRU
-        # TODO: Implement backpropagation through time
         conv_gru_outs = [self.conv_layers(x)]
         # 1 for the batch size
         # for holding the hidden states of the grus
-        hs = [torch.rand([1, self.final_c, self.final_h, self.final_w]).to(device)]
+        #hs = [torch.rand([1, self.final_c, self.final_h, self.final_w]).to(device)]
         for ix in range(self.gru_layers):
-            gru_out, gru_h = self.conv_grus[ix](conv_gru_outs[ix], hs[ix])
+            gru_out, hidden = self.conv_grus[ix](conv_gru_outs[ix], hidden)
             conv_gru_outs.append(gru_out)
-            hs.append(gru_h)
+            #hs.append(gru_h)
 
 
         # the last output is what we'll feed into our other models
@@ -78,7 +77,10 @@ class State_Rep(nn.Module):
 
         out = torch.cat([relations, conv_gru_out], dim = -1)
         #print(out.shape)
-        return out
+        return out, hidden
+
+    def reset_hidden(self):
+        return torch.rand([1, self.final_c, self.final_h, self.final_w]).to(device)
 
     def get_final_img_shape(self):
         return self.final_c, self.final_h, self.final_w
@@ -166,11 +168,8 @@ class Value_Fn(nn.Module):
     def __init__(self, state_rep):
         super(Value_Fn, self).__init__()
 
-        #self.state_rep = State_Rep(c, h, w, attn_heads)
-        self.state_rep = state_rep
-
         self.linears = nn.Sequential(
-            nn.Linear(self.state_rep.get_out_len(), 128),
+            nn.Linear(state_rep.get_out_len(), 128),
             nn.LeakyReLU(),
             nn.Linear(128, 64),
             nn.LeakyReLU(),
@@ -178,7 +177,7 @@ class Value_Fn(nn.Module):
         )
 
     def forward(self, x):
-        out = self.linears(self.state_rep(x))
+        out = self.linears(x)
         return out
 
 
@@ -190,11 +189,8 @@ class Policy(nn.Module):
             # intrinsic reward is self-improvement? how is this different from maximizing return?
     def __init__(self, action_dim, state_rep):
         super(Policy, self).__init__()
-        #self.state_rep = State_Rep(c, h, w, attn_heads)
-        self.state_rep = state_rep
-
         self.linears = nn.Sequential(
-            nn.Linear(self.state_rep.get_out_len(), 128),
+            nn.Linear(state_rep.get_out_len(), 128),
             nn.LeakyReLU(),
             nn.Linear(128, 128),
             nn.LeakyReLU(),
@@ -203,8 +199,7 @@ class Policy(nn.Module):
         )
 
     def forward(self, x):
-        out = self.state_rep(x)
-        out = self.linears(out)
+        out = self.linears(x)
         return out
 
 # TODO: try a random search to compare
