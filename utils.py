@@ -3,7 +3,7 @@ from includes import *
 class Buffer():
     def __init__(self, length):
         self.length = length
-        self.buffer = [Variable(torch.zeros(1), requires_grad = True)] * length
+        self.buffer = [Variable(torch.zeros(1), requires_grad = True).to(device)] * length
         self.replace_ix = 0 # to keep track of which position in array we should be replacing with a new element
 
     def push(self, x):
@@ -14,7 +14,7 @@ class Buffer():
             self.replace_ix += 1
 
     def sum(self):
-        return torch.sum(torch.stack(self.buffer), dim = 0)
+        return torch.sum(torch.stack(self.buffer).to(device), dim = 0)
 
 
 def train(env, state_rep, policy, value_fn, policy_optim, value_fn_optim, episodes, gamma, k1, k2):
