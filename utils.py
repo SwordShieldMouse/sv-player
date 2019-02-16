@@ -3,7 +3,7 @@ from includes import *
 class Buffer():
     def __init__(self, length):
         self.length = length
-        self.buffer = [Variable(torch.zeros(1), requires_grad = True).to(device)] * length
+        self.buffer = [torch.zeros(1).to(device)] * length
         self.replace_ix = 0 # to keep track of which position in array we should be replacing with a new element
 
     def push(self, x):
@@ -14,7 +14,7 @@ class Buffer():
             self.replace_ix += 1
 
     def sum(self):
-        return torch.sum(torch.stack(self.buffer).to(device), dim = 0)
+        return Variable(torch.sum(torch.stack(self.buffer).to(device), dim = 0), requires_grad = True)
 
 
 def train(env, state_rep, policy, value_fn, policy_optim, value_fn_optim, episodes, gamma, k1, k2):
@@ -37,6 +37,10 @@ def train(env, state_rep, policy, value_fn, policy_optim, value_fn_optim, episod
         # maintain a buffer of losses of length k2
         policy_loss_buffer = Buffer(k2)
         value_loss_buffer = Buffer(k2)
+        #state_history_buffer = Buffer(k2)
+        #state_history_buffer.push(obs_rep.detach())
+
+        prev_obs_rep = obs_rep
 
         while True:
             env.render()
@@ -47,12 +51,11 @@ def train(env, state_rep, policy, value_fn, policy_optim, value_fn_optim, episod
             obs, reward, done, info = env.step(action.item())
             obs = torch.FloatTensor(obs).to(device)
 
-            # maintain memory of states
-            # TODO: make sure to delete memory when we go on for too long
             obs_rep, hidden = state_rep(obs, hidden)
-            state_history.append(obs_rep)
-            reward_history.append(reward)
 
+            #state_history.append(obs_rep)
+            reward_history.append(reward)
+            #action_history.append(m.log_prob(action).detach())
 
             # backpropagate if we have gone for k1 steps since last backprop
             if t % k1 == 0 and t > 0:
@@ -75,7 +78,7 @@ def train(env, state_rep, policy, value_fn, policy_optim, value_fn_optim, episod
 
             # optimize the policy
             # use the advantage function as the reward
-            policy_loss = -(reward + gamma * value_fn(state_history[-1]) - value_fn(state_history[-2])) * m.log_prob(action)
+            policy_loss = -(reward + gamma * value_fn(obs_rep) - value_fn(prev_obs_rep)) * m.log_prob(action)
             #print(policy_loss.squeeze(0).shape)
             policy_loss_buffer.push(policy_loss.squeeze(0))
             #policy_optim.zero_grad()
@@ -83,12 +86,14 @@ def train(env, state_rep, policy, value_fn, policy_optim, value_fn_optim, episod
             #policy_optim.step()
 
             # optimize the value function with a semi-gradient method
-            next_value = value_fn(state_history[-1]).detach() # detach because we want to do semi-gradient
-            value_loss = (reward + gamma * next_value - value_fn(state_history[-2])) ** 2
+            next_value = value_fn(obs_rep).detach() # detach because we want to do semi-gradient
+            value_loss = (reward + gamma * next_value - value_fn(prev_obs_rep)) ** 2
             value_loss_buffer.push(value_loss.squeeze(0))
             #value_fn_optim.zero_grad()
             #value_loss.backward()
             #value_fn_optim.step()
+
+            prev_obs_rep = obs_rep
 
             t += 1
 
