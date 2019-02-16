@@ -169,9 +169,7 @@ class Value_Fn(nn.Module):
         super(Value_Fn, self).__init__()
 
         self.linears = nn.Sequential(
-            nn.Linear(state_rep.get_out_len(), 128),
-            nn.LeakyReLU(),
-            nn.Linear(128, 64),
+            nn.Linear(state_rep.get_out_len(), 64),
             nn.LeakyReLU(),
             nn.Linear(64, 1)
         )
@@ -190,11 +188,9 @@ class Policy(nn.Module):
     def __init__(self, action_dim, state_rep):
         super(Policy, self).__init__()
         self.linears = nn.Sequential(
-            nn.Linear(state_rep.get_out_len(), 128),
+            nn.Linear(state_rep.get_out_len(), 64),
             nn.LeakyReLU(),
-            nn.Linear(128, 128),
-            nn.LeakyReLU(),
-            nn.Linear(128, action_dim),
+            nn.Linear(64, action_dim),
             nn.LogSoftmax(dim = -1)
         )
 

@@ -50,7 +50,7 @@ def train(env, state_rep, policy, value_fn, policy_optim, value_fn_optim, episod
             # maintain memory of states
             # TODO: make sure to delete memory when we go on for too long
             obs_rep, hidden = state_rep(obs, hidden)
-            state_history.append(obs_rep.detach())
+            state_history.append(obs_rep)
             reward_history.append(reward)
 
 
